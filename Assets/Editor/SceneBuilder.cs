@@ -14,6 +14,7 @@ namespace ParticleAutomaton.Editor
         const string k_ScenePath    = "Assets/Scenes/ParticleAutomatonDemo.unity";
         const string k_MatPath      = "Assets/Materials/ParticleMaterial.mat";
         const string k_BoundsPath   = "Assets/Materials/BoundsWireframe.mat";
+        const string k_GroundPath   = "Assets/Materials/GroundPlane.mat";
         const string k_ComputePath  = "Assets/Shaders/ParticleAutomaton.compute";
         const string k_RendererPath = "Assets/Rendering/UniversalRendererData.asset";
         const string k_PipelinePath = "Assets/Rendering/UniversalRenderPipeline.asset";
@@ -31,6 +32,7 @@ namespace ParticleAutomaton.Editor
 
             var particleMat  = EnsureParticleMaterial();
             var boundsMat    = EnsureBoundsMaterial();
+            var groundMat    = EnsureGroundPlaneMaterial();
             var cs           = AssetDatabase.LoadAssetAtPath<ComputeShader>(k_ComputePath);
 
             if (cs == null)
@@ -45,6 +47,7 @@ namespace ParticleAutomaton.Editor
             var cameraGO    = CreateCamera();
             var automatonGO = CreateAutomaton(cs, particleMat);
             CreateBoundsWireframe(automatonGO.transform, boundsMat);
+            CreateGroundPlane(groundMat);
             LinkOrbitTarget(cameraGO, automatonGO.transform);
 
             AssetDatabase.SaveAssets();
@@ -152,13 +155,35 @@ namespace ParticleAutomaton.Editor
             return mat;
         }
 
+        static Material EnsureGroundPlaneMaterial()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(k_GroundPath);
+            if (existing != null) return existing;
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit")
+                      ?? Shader.Find("Standard");
+
+            if (shader == null)
+            {
+                Debug.LogWarning("[SceneBuilder] No Lit shader — ground plane will use default material.");
+                return null;
+            }
+
+            float c   = 192f / 255f;
+            var   mat = new Material(shader) { name = "GroundPlane" };
+            mat.SetColor("_BaseColor", new Color(c, c, c, 1f));
+            mat.SetColor("_Color",     new Color(c, c, c, 1f));
+            AssetDatabase.CreateAsset(mat, k_GroundPath);
+            return mat;
+        }
+
         // ── Render settings ────────────────────────────────────────────────────
 
         static void ConfigureRenderSettings()
         {
             RenderSettings.ambientMode  = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.18f, 0.18f, 0.18f, 1f);
-            RenderSettings.skybox       = null;
+            RenderSettings.skybox       = AssetDatabase.GetBuiltinExtraResource<Material>("Default-Skybox.mat");
             RenderSettings.fog          = false;
         }
 
@@ -183,8 +208,7 @@ namespace ParticleAutomaton.Editor
             go.tag = "MainCamera";
 
             var cam             = go.AddComponent<Camera>();
-            cam.clearFlags      = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.05f, 0.05f, 0.08f, 1f);
+            cam.clearFlags      = CameraClearFlags.Skybox;
             cam.fieldOfView     = 60f;
             cam.nearClipPlane   = 0.3f;
             cam.farClipPlane    = 1000f;
@@ -213,6 +237,21 @@ namespace ParticleAutomaton.Editor
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return go;
+        }
+
+        // ── Ground plane ──────────────────────────────────────────────────────
+        // Endless flat plane sitting at y = -50 (bottom face of the simulation volume).
+
+        static void CreateGroundPlane(Material mat)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            go.name = "GroundPlane";
+            // Unity's Plane primitive is 10×10 units; scale ×1000 → 10,000×10,000 units.
+            go.transform.position   = new Vector3(0f, -50f, 0f);
+            go.transform.localScale = new Vector3(1000f, 1f, 1000f);
+
+            if (mat != null)
+                go.GetComponent<MeshRenderer>().sharedMaterial = mat;
         }
 
         // ── Bounds wireframe ──────────────────────────────────────────────────
