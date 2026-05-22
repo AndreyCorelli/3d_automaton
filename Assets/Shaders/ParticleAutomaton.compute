@@ -1,0 +1,168 @@
+#pragma kernel ClearGrid
+#pragma kernel BuildGrid
+#pragma kernel Simulate
+
+// ── Particle struct (32 bytes, matches C# GpuParticle) ────────────────────────
+struct Particle
+{
+    float3 position; // 12
+    float  weight;   //  4
+    float3 velocity; // 12
+    uint   classId;  //  4
+};
+
+// ── Buffers ───────────────────────────────────────────────────────────────────
+StructuredBuffer<Particle>   _ParticlesRead;
+RWStructuredBuffer<Particle> _ParticlesWrite;
+RWStructuredBuffer<int>      _CellCounts;
+RWStructuredBuffer<int>      _CellParticleIds;
+RWStructuredBuffer<int>      _OverflowCount;
+StructuredBuffer<float>      _InteractionMatrix;
+
+// ── Uniforms ──────────────────────────────────────────────────────────────────
+float  _DeltaTime;
+float  _Gravity;
+float  _Damping;
+float  _WallBounce;
+float  _InteractionRadius;
+float  _MaxVelocity;
+float  _DistanceEpsilon;
+float  _RepulsionStrength;
+float  _CellSize;
+int    _ParticleCount;
+int    _ClassCount;
+int    _MaxParticlesPerCell;
+int    _TotalCells;
+float3 _BoundsMin;
+float3 _BoundsMax;
+int3   _GridSize;
+
+// ── Grid helpers ──────────────────────────────────────────────────────────────
+
+int3 PositionToCell(float3 pos)
+{
+    float3 local = pos - _BoundsMin;
+    int3   cell  = (int3)floor(local / _CellSize);
+    return clamp(cell, int3(0, 0, 0), _GridSize - 1);
+}
+
+uint FlattenCell(int3 cell)
+{
+    return (uint)(cell.x + cell.y * _GridSize.x + cell.z * _GridSize.x * _GridSize.y);
+}
+
+// ── ClearGrid ─────────────────────────────────────────────────────────────────
+// Clears per-cell particle counts and the overflow counter.
+// Dispatched over totalCells threads; thread 0 also clears overflow.
+[numthreads(256, 1, 1)]
+void ClearGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i < (uint)_TotalCells)
+        _CellCounts[i] = 0;
+
+    // Clear overflow counter exactly once.
+    if (i == 0)
+        _OverflowCount[0] = 0;
+}
+
+// ── BuildGrid ─────────────────────────────────────────────────────────────────
+// Assigns each particle to its grid cell via atomic slot allocation.
+[numthreads(256, 1, 1)]
+void BuildGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint pid = id.x;
+    if (pid >= (uint)_ParticleCount) return;
+
+    int3 cell   = PositionToCell(_ParticlesRead[pid].position);
+    uint cellId = FlattenCell(cell);
+
+    uint slot;
+    InterlockedAdd(_CellCounts[cellId], 1, slot);
+
+    if (slot < (uint)_MaxParticlesPerCell)
+        _CellParticleIds[cellId * _MaxParticlesPerCell + slot] = (int)pid;
+    else
+        InterlockedAdd(_OverflowCount[0], 1);
+}
+
+// ── Simulate ──────────────────────────────────────────────────────────────────
+// For each particle: accumulate interaction forces from 27-cell neighbourhood,
+// apply gravity, integrate, bounce off walls, write result.
+[numthreads(256, 1, 1)]
+void Simulate(uint3 id : SV_DispatchThreadID)
+{
+    uint pid = id.x;
+    if (pid >= (uint)_ParticleCount) return;
+
+    Particle cur     = _ParticlesRead[pid];
+    int3     curCell = PositionToCell(cur.position);
+
+    float3 force = float3(0, 0, 0);
+
+    // Inspect all 27 neighbouring cells (3×3×3 block centred on current cell).
+    for (int dz = -1; dz <= 1; dz++)
+    for (int dy = -1; dy <= 1; dy++)
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        int3 nc = curCell + int3(dx, dy, dz);
+
+        // Skip cells outside the grid.
+        if (any(nc < 0) || any(nc >= _GridSize)) continue;
+
+        uint cellId = FlattenCell(nc);
+        int  count  = min(_CellCounts[cellId], _MaxParticlesPerCell);
+
+        for (int s = 0; s < count; s++)
+        {
+            uint nid = (uint)_CellParticleIds[cellId * _MaxParticlesPerCell + s];
+            if (nid == pid) continue;
+
+            Particle nbr   = _ParticlesRead[nid];
+            float3   delta = nbr.position - cur.position;
+            float    dist  = length(delta);
+
+            // Clamp with epsilon to avoid NaN at zero distance.
+            dist = max(dist, _DistanceEpsilon);
+
+            if (dist > _InteractionRadius) continue;
+
+            // Semantic: interactionMatrix[current.classId, neighbor.classId]
+            // Positive = attraction, Negative = repulsion.
+            float matVal = _InteractionMatrix[cur.classId * (uint)_ClassCount + nbr.classId];
+
+            // Force falls off linearly to zero at interactionRadius.
+            float falloff = 1.0 - dist / _InteractionRadius;
+            float3 dir    = delta / dist;
+            force += dir * (matVal * falloff);
+
+            // Universal repulsion: 1/d³, class-agnostic. Impulse cap handled by maxVelocity clamp.
+            force += -dir * (_RepulsionStrength / (dist * dist * dist));
+        }
+    }
+
+    // Gravity: acceleration = gravity * classWeight (downward).
+    force += float3(0.0, -_Gravity * cur.weight, 0.0);
+
+    // Velocity integration.
+    cur.velocity += force * _DeltaTime;
+    cur.velocity *= _Damping;
+
+    // Clamp speed.
+    float speed = length(cur.velocity);
+    if (speed > _MaxVelocity)
+        cur.velocity = (cur.velocity / speed) * _MaxVelocity;
+
+    // Position integration.
+    cur.position += cur.velocity * _DeltaTime;
+
+    // Wall bounce — reflect and attenuate each axis independently.
+    if (cur.position.x < _BoundsMin.x) { cur.position.x = _BoundsMin.x;  cur.velocity.x =  abs(cur.velocity.x) * _WallBounce; }
+    if (cur.position.x > _BoundsMax.x) { cur.position.x = _BoundsMax.x;  cur.velocity.x = -abs(cur.velocity.x) * _WallBounce; }
+    if (cur.position.y < _BoundsMin.y) { cur.position.y = _BoundsMin.y;  cur.velocity.y =  abs(cur.velocity.y) * _WallBounce; }
+    if (cur.position.y > _BoundsMax.y) { cur.position.y = _BoundsMax.y;  cur.velocity.y = -abs(cur.velocity.y) * _WallBounce; }
+    if (cur.position.z < _BoundsMin.z) { cur.position.z = _BoundsMin.z;  cur.velocity.z =  abs(cur.velocity.z) * _WallBounce; }
+    if (cur.position.z > _BoundsMax.z) { cur.position.z = _BoundsMax.z;  cur.velocity.z = -abs(cur.velocity.z) * _WallBounce; }
+
+    _ParticlesWrite[pid] = cur;
+}
