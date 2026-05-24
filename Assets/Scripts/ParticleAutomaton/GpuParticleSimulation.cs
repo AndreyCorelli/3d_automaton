@@ -146,6 +146,7 @@ namespace ParticleAutomaton
             _cs.SetFloat("_MaxVelocity",        _cfg.maxVelocity);
             _cs.SetFloat("_DistanceEpsilon",      0.0001f);
             _cs.SetFloat("_RepulsionStrength",    _cfg.repulsionStrength);
+            _cs.SetFloat("_RepulsionRadius",      _cfg.repulsionRadius);
             _cs.SetFloat("_CellSize",           _cfg.cellSize);
             _cs.SetInt(  "_ParticleCount",      _cfg.particleCount);
             _cs.SetInt(  "_ClassCount",         _cfg.classes.Length);

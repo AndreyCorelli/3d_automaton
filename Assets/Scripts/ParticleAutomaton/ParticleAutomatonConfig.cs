@@ -8,22 +8,23 @@ namespace ParticleAutomaton
     {
         [Header("Simulation")]
         public int   particleCount     = 10000;
-        public float timeScale         = 1f;
+        public float timeScale         = 2f;
         public float gravity           = 10f;
         public float damping           = 0.99f;
         public float wallBounce        = 0.8f;
-        public float interactionRadius  = 4f;
+        public float interactionRadius  = 5f;
         public float maxVelocity        = 70f;
         public float repulsionStrength  = 100f;
+        public float repulsionRadius    = 2.0f;
 
         [Header("Volume")]
         public Vector3 boundsMin = new(-50f, -50f, -50f);
         public Vector3 boundsMax = new( 50f,  50f,  50f);
 
         [Header("Spatial Grid")]
-        public float cellSize            = 4f;
-        [Tooltip("64 is efficient for 10k particles. Values ≥ 500 waste significant GPU memory.")]
-        public int   maxParticlesPerCell = 64;
+        public float cellSize            = 5f;
+        [Tooltip("128 is efficient for 10k particles. Values ≥ 500 waste significant GPU memory.")]
+        public int   maxParticlesPerCell = 128;
 
         [Header("Rendering")]
         public float particleVisualRadius = 1.0f;

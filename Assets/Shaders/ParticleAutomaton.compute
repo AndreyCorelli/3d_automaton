@@ -28,6 +28,7 @@ float  _InteractionRadius;
 float  _MaxVelocity;
 float  _DistanceEpsilon;
 float  _RepulsionStrength;
+float  _RepulsionRadius;
 float  _CellSize;
 int    _ParticleCount;
 int    _ClassCount;
@@ -136,8 +137,9 @@ void Simulate(uint3 id : SV_DispatchThreadID)
             float3 dir    = delta / dist;
             force += dir * (matVal * falloff);
 
-            // Universal repulsion: 1/d³, class-agnostic. Impulse cap handled by maxVelocity clamp.
-            force += -dir * (_RepulsionStrength / (dist * dist * dist));
+            // Universal short-range repulsion, class-agnostic. Bounded at d=0, zero at _RepulsionRadius.
+            float repulsionFalloff = saturate(1.0 - dist / _RepulsionRadius);
+            force += -dir * (_RepulsionStrength * repulsionFalloff * repulsionFalloff);
         }
     }
 
@@ -146,7 +148,7 @@ void Simulate(uint3 id : SV_DispatchThreadID)
 
     // Velocity integration.
     cur.velocity += force * _DeltaTime;
-    cur.velocity *= _Damping;
+    cur.velocity *= pow(_Damping, _DeltaTime);
 
     // Clamp speed.
     float speed = length(cur.velocity);

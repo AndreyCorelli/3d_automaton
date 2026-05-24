@@ -61,6 +61,24 @@ namespace ParticleAutomaton
             _fps = 1f / Mathf.Max(Time.unscaledDeltaTime, 1e-6f);
         }
 
+        // ── Preset API ─────────────────────────────────────────────────────────
+
+        public ParticleAutomatonConfig GetConfig() => config;
+
+        public void ApplyPreset(ParticleAutomatonConfig cfg)
+        {
+            config = cfg;
+            if (_sim != null) { OnDisable(); OnEnable(); }
+        }
+
+        // ── Inspector live-edit ────────────────────────────────────────────────
+
+        private void OnValidate()
+        {
+            _sim?.UpdateInteractionMatrix();
+            _renderer?.UpdateClassColors(config);
+        }
+
         // ── Runtime buttons ────────────────────────────────────────────────────
 
         [ContextMenu("Reset Particles")]
