@@ -76,6 +76,7 @@ namespace ParticleAutomaton
         private void OnValidate()
         {
             _sim?.UpdateInteractionMatrix();
+            _sim?.UpdateClassWeights();
             _renderer?.UpdateClassColors(config);
         }
 

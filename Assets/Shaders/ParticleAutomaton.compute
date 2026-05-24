@@ -18,6 +18,7 @@ RWStructuredBuffer<int>      _CellCounts;
 RWStructuredBuffer<int>      _CellParticleIds;
 RWStructuredBuffer<int>      _OverflowCount;
 StructuredBuffer<float>      _InteractionMatrix;
+StructuredBuffer<float>      _ClassWeights;
 
 // ── Uniforms ──────────────────────────────────────────────────────────────────
 float  _DeltaTime;
@@ -29,6 +30,7 @@ float  _MaxVelocity;
 float  _DistanceEpsilon;
 float  _RepulsionStrength;
 float  _RepulsionRadius;
+int    _UseMidpointForces;
 float  _CellSize;
 int    _ParticleCount;
 int    _ClassCount;
@@ -99,6 +101,11 @@ void Simulate(uint3 id : SV_DispatchThreadID)
     Particle cur     = _ParticlesRead[pid];
     int3     curCell = PositionToCell(cur.position);
 
+    // Midpoint prediction: evaluate forces at t + dt/2 for 2nd-order accuracy.
+    // When _UseMidpointForces == 0 the half-step collapses to zero (plain Euler).
+    float  midHalfDt = _DeltaTime * 0.5 * (float)_UseMidpointForces;
+    float3 curEval   = cur.position + cur.velocity * midHalfDt;
+
     float3 force = float3(0, 0, 0);
 
     // Inspect all 27 neighbouring cells (3×3×3 block centred on current cell).
@@ -119,8 +126,9 @@ void Simulate(uint3 id : SV_DispatchThreadID)
             uint nid = (uint)_CellParticleIds[cellId * _MaxParticlesPerCell + s];
             if (nid == pid) continue;
 
-            Particle nbr   = _ParticlesRead[nid];
-            float3   delta = nbr.position - cur.position;
+            Particle nbr    = _ParticlesRead[nid];
+            float3   nbrEval = nbr.position + nbr.velocity * midHalfDt;
+            float3   delta  = nbrEval - curEval;
             float    dist  = length(delta);
 
             // Clamp with epsilon to avoid NaN at zero distance.
@@ -143,8 +151,8 @@ void Simulate(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // Gravity: acceleration = gravity * classWeight (downward).
-    force += float3(0.0, -_Gravity * cur.weight, 0.0);
+    // Gravity: acceleration = gravity * classWeight (downward). Weight read from live buffer, not baked particle field.
+    force += float3(0.0, -_Gravity * _ClassWeights[cur.classId], 0.0);
 
     // Velocity integration.
     cur.velocity += force * _DeltaTime;

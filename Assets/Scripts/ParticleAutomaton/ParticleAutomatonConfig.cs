@@ -8,7 +8,8 @@ namespace ParticleAutomaton
     {
         [Header("Simulation")]
         public int   particleCount     = 10000;
-        public float timeScale         = 2f;
+        public float timeScale          = 2f;
+        public bool  midpointForces     = true;
         public float gravity           = 10f;
         public float damping           = 0.99f;
         public float wallBounce        = 0.8f;

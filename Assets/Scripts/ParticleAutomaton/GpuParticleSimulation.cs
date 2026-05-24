@@ -27,6 +27,7 @@ namespace ParticleAutomaton
         private ComputeBuffer _cellParticleIds;
         private ComputeBuffer _overflowCount;
         private ComputeBuffer _interactionMatrix;
+        private ComputeBuffer _classWeights;
 
         private readonly int _kernelClear;
         private readonly int _kernelBuild;
@@ -76,6 +77,9 @@ namespace ParticleAutomaton
             int n = _cfg.classes.Length;
             _interactionMatrix = new ComputeBuffer(n * n, sizeof(float));
             _interactionMatrix.SetData(_cfg.interactionMatrix);
+
+            _classWeights = new ComputeBuffer(n, sizeof(float));
+            UploadClassWeights();
         }
 
         // Bind buffers that never swap between frames — called once at construction.
@@ -91,6 +95,7 @@ namespace ParticleAutomaton
             _cs.SetBuffer(_kernelSim, "_CellCounts",        _cellCounts);
             _cs.SetBuffer(_kernelSim, "_CellParticleIds",   _cellParticleIds);
             _cs.SetBuffer(_kernelSim, "_InteractionMatrix", _interactionMatrix);
+            _cs.SetBuffer(_kernelSim, "_ClassWeights",      _classWeights);
         }
 
         public void InitParticles()
@@ -115,9 +120,16 @@ namespace ParticleAutomaton
             _particlesRead.SetData(data);
         }
 
-        public void UpdateInteractionMatrix()
+        public void UpdateInteractionMatrix() => _interactionMatrix.SetData(_cfg.interactionMatrix);
+
+        public void UpdateClassWeights() => UploadClassWeights();
+
+        void UploadClassWeights()
         {
-            _interactionMatrix.SetData(_cfg.interactionMatrix);
+            var weights = new float[_cfg.classes.Length];
+            for (int i = 0; i < weights.Length; i++)
+                weights[i] = _cfg.classes[i].weight;
+            _classWeights.SetData(weights);
         }
 
         public void Step(float deltaTime)
@@ -147,6 +159,7 @@ namespace ParticleAutomaton
             _cs.SetFloat("_DistanceEpsilon",      0.0001f);
             _cs.SetFloat("_RepulsionStrength",    _cfg.repulsionStrength);
             _cs.SetFloat("_RepulsionRadius",      _cfg.repulsionRadius);
+            _cs.SetInt(  "_UseMidpointForces",    _cfg.midpointForces ? 1 : 0);
             _cs.SetFloat("_CellSize",           _cfg.cellSize);
             _cs.SetInt(  "_ParticleCount",      _cfg.particleCount);
             _cs.SetInt(  "_ClassCount",         _cfg.classes.Length);
@@ -189,6 +202,7 @@ namespace ParticleAutomaton
             _cellParticleIds?.Release();
             _overflowCount?.Release();
             _interactionMatrix?.Release();
+            _classWeights?.Release();
         }
     }
 }
