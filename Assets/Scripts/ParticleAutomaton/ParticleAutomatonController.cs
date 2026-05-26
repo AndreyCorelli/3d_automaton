@@ -16,8 +16,9 @@ namespace ParticleAutomaton
         [Header("Debug")]
         [SerializeField] private bool showDebugOverlay = true;
 
-        private GpuParticleSimulation   _sim;
+        private GpuParticleSimulation     _sim;
         private ParticleAutomatonRenderer _renderer;
+        private BallController            _ball;
         private int   _frame;
         private float _fps;
 
@@ -32,6 +33,11 @@ namespace ParticleAutomaton
 
             _sim      = new GpuParticleSimulation(computeShader, config);
             _renderer = new ParticleAutomatonRenderer(particleMesh, particleMaterial, config);
+
+            var ballGo = new GameObject("SimulationBall");
+            ballGo.transform.SetParent(transform);
+            _ball = ballGo.AddComponent<BallController>();
+            _ball.Init(config);
         }
 
         private void OnDisable()
@@ -40,11 +46,26 @@ namespace ParticleAutomaton
             _renderer?.Dispose();
             _sim      = null;
             _renderer = null;
+
+            if (_ball != null)
+            {
+                Destroy(_ball.gameObject);
+                _ball = null;
+            }
         }
 
         private void Update()
         {
             if (_sim == null) return;
+
+            if (_ball != null)
+            {
+                _sim.SetBall(_ball.Position, _ball.WorldRadius, config.ballForceMin, config.ballForceMax);
+                if (_frame == 1)
+                    Debug.Log($"[Ball→GPU] pos={_ball.Position:F1}  r={_ball.WorldRadius:F1}  fMin={config.ballForceMin}  fMax={config.ballForceMax}");
+            }
+            else if (_frame == 1)
+                Debug.LogWarning("[Ball→GPU] _ball is null — SetBall never called");
 
             _sim.Step(Time.deltaTime * config.timeScale);
 
@@ -164,7 +185,11 @@ namespace ParticleAutomaton
             var style = new GUIStyle(GUI.skin.label) { fontSize = 14 };
             style.normal.textColor = Color.white;
 
-            GUI.Label(new Rect(10, 10, 420, 250),
+            string ballLine = _ball != null
+                ? $"Ball pos:     {_ball.Position:F1}  r={_ball.WorldRadius:F1}  f=[{config.ballForceMin},{config.ballForceMax}]"
+                : "Ball:         (none)";
+
+            GUI.Label(new Rect(10, 10, 520, 280),
                 $"Particles:    {config.particleCount:N0}\n" +
                 $"Classes:      {config.classes.Length}\n" +
                 $"Grid:         {gs.x}×{gs.y}×{gs.z}\n" +
@@ -172,7 +197,8 @@ namespace ParticleAutomaton
                 $"Max/cell:     {config.maxParticlesPerCell}\n" +
                 $"GPU memory:   {mem / 1048576.0:F2} MiB\n" +
                 $"Overflow:     {_sim.LastOverflow}\n" +
-                $"FPS:          {_fps:F1}",
+                $"FPS:          {_fps:F1}\n" +
+                ballLine,
                 style);
         }
 

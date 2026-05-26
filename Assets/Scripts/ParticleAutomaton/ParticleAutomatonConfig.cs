@@ -30,6 +30,11 @@ namespace ParticleAutomaton
         [Header("Rendering")]
         public float particleVisualRadius = 1.0f;
 
+        [Header("Ball")]
+        public float ballRadiusFraction = 0.2f;
+        public float ballForceMin       = 20f;
+        public float ballForceMax       = 200f;
+
         [Header("Classes")]
         public ParticleClassConfig[] classes = new ParticleClassConfig[]
         {

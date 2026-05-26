@@ -39,6 +39,10 @@ int    _TotalCells;
 float3 _BoundsMin;
 float3 _BoundsMax;
 int3   _GridSize;
+float3 _BallPosition;
+float  _BallRadius;
+float  _BallForceMin;
+float  _BallForceMax;
 
 // ── Grid helpers ──────────────────────────────────────────────────────────────
 
@@ -149,6 +153,16 @@ void Simulate(uint3 id : SV_DispatchThreadID)
             float repulsionFalloff = saturate(1.0 - dist / _RepulsionRadius);
             force += -dir * (_RepulsionStrength * repulsionFalloff * repulsionFalloff);
         }
+    }
+
+    // Ball repulsion: f = fMin + (1 - d) * (fMax - fMin), d = normalised distance [0,1].
+    float3 toPart    = cur.position - _BallPosition;
+    float  ballDist  = length(toPart);
+    if (_BallRadius > 0.0 && ballDist < _BallRadius && ballDist > _DistanceEpsilon)
+    {
+        float  d = ballDist / _BallRadius;
+        float  f = _BallForceMin + (1.0 - d) * (_BallForceMax - _BallForceMin);
+        force += (toPart / ballDist) * f;
     }
 
     // Gravity: acceleration = gravity * classWeight (downward). Weight read from live buffer, not baked particle field.

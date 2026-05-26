@@ -38,6 +38,11 @@ namespace ParticleAutomaton
 
         private readonly int[] _overflowReadback = new int[1];
 
+        private Vector3 _ballPosition = Vector3.zero;
+        private float   _ballRadius   = 0f;
+        private float   _ballForceMin = 0f;
+        private float   _ballForceMax = 0f;
+
         public ComputeBuffer ParticlesRead   => _particlesRead;
         public int           ParticleCount   => _cfg.particleCount;
         public int           LastOverflow    { get; private set; }
@@ -120,6 +125,14 @@ namespace ParticleAutomaton
             _particlesRead.SetData(data);
         }
 
+        public void SetBall(Vector3 position, float radius, float forceMin, float forceMax)
+        {
+            _ballPosition  = position;
+            _ballRadius    = radius;
+            _ballForceMin  = forceMin;
+            _ballForceMax  = forceMax;
+        }
+
         public void UpdateInteractionMatrix() => _interactionMatrix.SetData(_cfg.interactionMatrix);
 
         public void UpdateClassWeights() => UploadClassWeights();
@@ -165,9 +178,13 @@ namespace ParticleAutomaton
             _cs.SetInt(  "_ClassCount",         _cfg.classes.Length);
             _cs.SetInt(  "_MaxParticlesPerCell",_cfg.maxParticlesPerCell);
             _cs.SetInt(  "_TotalCells",         _totalCells);
-            _cs.SetVector("_BoundsMin", _cfg.boundsMin);
-            _cs.SetVector("_BoundsMax", _cfg.boundsMax);
-            _cs.SetInts("_GridSize", _gridSize.x, _gridSize.y, _gridSize.z);
+            _cs.SetVector("_BoundsMin",    _cfg.boundsMin);
+            _cs.SetVector("_BoundsMax",    _cfg.boundsMax);
+            _cs.SetInts(  "_GridSize",     _gridSize.x, _gridSize.y, _gridSize.z);
+            _cs.SetVector("_BallPosition", _ballPosition);
+            _cs.SetFloat( "_BallRadius",   _ballRadius);
+            _cs.SetFloat( "_BallForceMin", _ballForceMin);
+            _cs.SetFloat( "_BallForceMax", _ballForceMax);
         }
 
         private void Dispatch(int kernel, int count)
